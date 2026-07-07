@@ -57,4 +57,39 @@ pipeline {
 
                 withCredentials([usernamePassword(
                 credentialsId: 'dockerhub',
+                usernameVariable: 'USER',
+                passwordVariable: 'PASS')]) {
+
+                    sh '''
+                    echo $PASS | docker login -u $USER --password-stdin
+                    docker push username/springboot-app:latest
+                    '''
+
+                }
+
+            }
+
+        }
+
+        stage('Deploy') {
+
+            steps {
+
+                sh '''
+                docker stop springboot || true
+                docker rm springboot || true
+
+                docker run -d \
+                --name springboot \
+                -p 8080:8080 \
+                username/springboot-app:latest
+                '''
+
+            }
+
+        }
+
+    }
+
+}
 
