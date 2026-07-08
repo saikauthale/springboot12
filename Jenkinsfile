@@ -1,13 +1,11 @@
 pipeline {
+
     agent any
 
-    tools {
-        maven 'Maven3'
-    }
-
     environment {
-        IMAGE_NAME = "saikauthale/springboot-app"
-        IMAGE_TAG = "v1.0"
+        IMAGE_NAME = "springboot-demo"
+        CONTAINER_NAME = "springboot-container"
+        DEPLOY_HOST = "43.205.108.87"
     }
 
     stages {
@@ -15,7 +13,7 @@ pipeline {
         stage('Clone') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/saikauthale/springboot12.git'
+                url: 'https://github.com/saikauthale/springboot12.git'
             }
         }
 
@@ -25,54 +23,33 @@ pipeline {
             }
         }
 
-        stage('Docker Build') {
+        stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                sh 'docker build -t $IMAGE_NAME .'
             }
         }
 
-        stage('Docker Login') {
+        stage('Deploy to EC2') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub',
-                    usernameVariable: 'DOCKER_USERNAME',
-                    passwordVariable: 'DOCKER_PASSWORD'
-                )]) {
+                sshagent(credentials: ['ssh -o StrictHostKeyChecking=no 172.31.16.152 "hostname']) {
                     sh '''
-                        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                    docker save $IMAGE_NAME | bzip2 | \
+                    ssh -o StrictHostKeyChecking=no $DEPLOY_HOST '
+                    bunzip2 | docker load
+
+                    docker stop $CONTAINER_NAME || true
+                    docker rm $CONTAINER_NAME || true
+
+                    docker run -d \
+                    --name $CONTAINER_NAME \
+                    -p 8080:8080 \
+                    $IMAGE_NAME
+                    '
                     '''
                 }
             }
         }
 
-        stage('Docker Push') {
-            steps {
-                sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
-            }
-        }
-
-        stage('Deploy') {
-            steps {
-                sh '''
-                    docker stop springboot-app || true
-                    docker rm springboot-app || true
-
-                    docker run -d \
-                      --name springboot-app \
-                      -p 8080:8080 \
-                      saikauthale/springboot-app:v1.0
-                '''
-            }
-        }
     }
 
-    post {
-        success {
-            echo 'Pipeline completed successfully.'
-        }
-
-        failure {
-            echo 'Pipeline failed.'
-        }
-    }
 }
